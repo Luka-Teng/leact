@@ -1,0 +1,30 @@
+{
+  "name": "leact",
+  "version": "1.0.0",
+  "description": "基于Pombo-build-your-own-react的react的读后感",
+  "main": "createElement.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Luka-Teng/leact.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Luka-Teng/leact/issues"
+  },
+  "homepage": "https://github.com/Luka-Teng/leact#readme",
+  "devDependencies": {
+    "babel-eslint": "^10.0.3",
+    "eslint": "5.6.0",
+    "eslint-config-react-app": "^3.0.4",
+    "eslint-loader": "2.1.1",
+    "eslint-plugin-flowtype": "2.50.1",
+    "eslint-plugin-import": "2.14.0",
+    "eslint-plugin-jsx-a11y": "6.1.2",
+    "eslint-plugin-react": "7.11.1",
+    "xmiot-server": "^1.3.7"
+  }
+}
