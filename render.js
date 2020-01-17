@@ -1,33 +1,84 @@
+import Component from './component'
 /**
  * 新概念instance
- * 在做reconcile的时候，我们需要存储对应element的dom元素
- * 这些dom元素在我们走更新阶段的是必须的
- * 因此只有element是不够的，我们需要instance来存储更多的可用信息
- * @prop { instance.element } 对应的element信息
- * @prop { instance.dom } 对应的dom节点
- * @prop { instance.childInstances } 对应子元素的instance
+ * 如果我们仅仅是基于最简单的element-tree做diff会有以下几个问题
+ * 1. 没有对应的dom属性，无法局部的更新
+ * 2. 没有component的实例，无法实现生命周期，无法实现setState等功能
  * instantiate的过程就是将
  * element tree ---> instance tree
  * 而之所以这么做都是为我的tree提供能方便的操作能力
+ * 
+ * 共有属性，dom element, function element, class element具有
+ * @prop { instance.element } 对应的element信息
+ * @prop { instance.dom } 对应的dom node
+ * 
+ * dom element具有，因为只有dom element拥有多个子元素
+ * @prop { instance.childInstances } 对应子元素的instance
+ * 
+ * function element, class element具有，因为function element, class element只有一个子元素
+ * @prop { instance.childInstance } 对应子元素的instance
+ * 
+ * class element具有，因为这个通过class Component通过实例化生成的
+ * @prop { instance.componentInstance } compositeElment对应的component实例
  */
 const instantiate = (element) => {
-  const { type, props: { children } } = element
+  const type = element.type
 
-  const dom = type === 'TEXT_TYPE'
+  if (typeof type === 'string') {
+    /* dom element */
+    const dom = type === 'TEXT_TYPE'
     ? document.createTextNode('')
     : document.createElement(type)
 
-  updateDomProperties(dom, element.props)
+    /* 将属性绑定到dom node上 */
+    updateDomProperties(dom, element.props)
 
-  const childInstances = children.map(instantiate)
-  childInstances.forEach((childInstance) => {
-    dom.append(childInstance.dom)
-  })
+    /**
+     * dom element的特点：
+     * 每个子element都是需要被渲染，所以每个都需要实例化的
+     * renderedElements = children
+     */
+    const childInstances = element.props.children.map(instantiate)
+    childInstances.forEach((childInstance) => {
+      dom.append(childInstance.dom)
+    })
 
-  return {
-    dom,
-    element,
-    childInstances
+    return {
+      dom,
+      element,
+      childInstances
+    }
+  } else if (type instanceof Component) {
+    /* class Component */
+    const props = element.props
+    const componentInstance = new type(props)
+
+    /**
+     * Component element的特点：
+     * 需要被渲染的element，是通过实例render出来的
+     */
+    const renderedElement = componentInstance.render()
+    const childInstance = instantiate(renderedElement)
+
+    return {
+      element,
+      /* dom在不断递归中，指向最近的dom instance的dom属性 */
+      dom: childInstance.dom,
+      childInstance,
+      componentInstance
+    }
+  } else if (typeof type === 'function') {
+    /* function Component */
+    const props = element.props
+    const renderedElement = type(props)
+    const childInstance = instantiate(renderedElement)
+
+    return {
+      element,
+      /* 与component element一样，dom在不断递归中，指向最近的dom instance的dom属性 */
+      dom: childInstance.dom,
+      childInstance
+    }
   }
 }
 
@@ -142,5 +193,6 @@ const reconcileChild = (parentDom, prevChildInstances, nextChildElements) => {
 export default render
 
 export {
-  preRootInstance
+  preRootInstance,
+  instantiate
 }

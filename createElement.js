@@ -1,7 +1,10 @@
 /** 
  * leactElement
- * dom --> leactElement
- * leactElement是关于node（暂时为dom）的一种json描述
+ * dom/component --> leactElement
+ * element分为2类：
+ * 1. dom element: 用于描述dom的element，type为string
+ * 2. component element：用于描述component的element，type为class/function
+ * leactElement是关于node（Dom or Component）的一种json描述
  * 
  * <div id="app">hello</div> 
  * 等价于
