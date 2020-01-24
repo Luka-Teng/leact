@@ -1,17 +1,32 @@
 import createElement from './createElement'
-import render, { preRootInstance, instantiate } from './render'
+import render, { preRootInstance } from './render'
+import Component from './component'
 
-const element1 = createElement(
-  'div',
-  { width: '200px' },
-  createElement(
-    'p',
-    { height: '200px' },
-    'text'
-  )
-)
-console.log(instantiate(element1))
-render(document.getElementById('root'), element1)
-window.preRootInstance = preRootInstance
-window.render = render
-window.createElement = createElement
+class A extends Component {
+  render () {
+    const { text } = this.state
+    return createElement(
+      'div', 
+      {
+        id: 'first'
+      },
+      text
+    )
+  }
+}
+
+class B extends Component {
+  render () {
+    return createElement(
+      'div', 
+      222
+    )
+  }
+}
+
+render(document.getElementById('root'), createElement('div', {}, 
+  createElement(A),
+  createElement(B)
+))
+
+window.root = preRootInstance

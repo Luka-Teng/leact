@@ -1,25 +1,26 @@
 import Component from './component'
 /**
  * 新概念instance
+ * 首先dom-tree可以理解为一种树状的数据保存形式
  * 如果我们仅仅是基于最简单的element-tree做diff会有以下几个问题
  * 1. 没有对应的dom属性，无法局部的更新
  * 2. 没有component的实例，无法实现生命周期，无法实现setState等功能
  * instantiate的过程就是将
  * element tree ---> instance tree
- * 而之所以这么做都是为我的tree提供能方便的操作能力
+ * 而之所以这么做都是为我们的tree提供能方便的操作能力
  * 
  * 共有属性，dom element, function element, class element具有
  * @prop { instance.element } 对应的element信息
- * @prop { instance.dom } 对应的dom node
+ * @prop { instance.dom } 对应的dom node，这个属性的意义在于我们需要对dom进行操作
  * 
  * dom element具有，因为只有dom element拥有多个子元素
- * @prop { instance.childInstances } 对应子元素的instance
+ * @prop { instance.childInstances } 对应子元素的instance，方便进行树的递归遍历
  * 
  * function element, class element具有，因为function element, class element只有一个子元素
- * @prop { instance.childInstance } 对应子元素的instance
+ * @prop { instance.childInstance } 对应子元素的instance，方便进行树的递归遍历
  * 
  * class element具有，因为这个通过class Component通过实例化生成的
- * @prop { instance.componentInstance } compositeElment对应的component实例
+ * @prop { instance.componentInstance } compositeElment对应的component实例，方便对生命周期等的调用
  */
 const instantiate = (element) => {
   const type = element.type
@@ -48,7 +49,8 @@ const instantiate = (element) => {
       element,
       childInstances
     }
-  } else if (type instanceof Component) {
+  } else if (type.prototype instanceof Component) {
+    /* 这边用type.prototype判断是否是继承，es6中的继承一般是将实例示例挂载被继承的Component Class的prototype上 */
     /* class Component */
     const props = element.props
     const componentInstance = new type(props)
@@ -59,14 +61,16 @@ const instantiate = (element) => {
      */
     const renderedElement = componentInstance.render()
     const childInstance = instantiate(renderedElement)
-
-    return {
+    const instance = {
       element,
       /* dom在不断递归中，指向最近的dom instance的dom属性 */
       dom: childInstance.dom,
       childInstance,
       componentInstance
     }
+    componentInstance.__instance = instance
+
+    return instance
   } else if (typeof type === 'function') {
     /* function Component */
     const props = element.props
@@ -87,7 +91,7 @@ const instantiate = (element) => {
  */
 const updateDomProperties = (dom, nextProps, prevProps) => {
   const isEvent = name => name.startsWith("on")
-  const isAttribute = name => !isEvent(name) && name != "children"
+  const isAttribute = name => !isEvent(name) && name !== "children"
 
   /* 如果dom元素之前存在属性，则先取消之前的属性和事件绑定 */
   if (prevProps) {
@@ -132,30 +136,40 @@ let render = (appDom, element) => {
 }
 
 /**
- * 将一个nodeInstance和一个element进行比较
- * 可以简单的理解成将新老两个dom-tree的同一位置的一个节点进行比较
- * 主要协助完成两件事
- * 1. 建立新的dom-tree（instance-tree形式）
- * 2. dom更新
+ * 将一个instance和一个element进行比较
+ * 可以简单的理解成将老的instance-tree和新的element-tree进行比较
  */
 const reconcile = (parentDom, prevInstance, nextElement) => {
+  window.p = parentDom
   if (nextElement === undefined) {
+
     /* 老节点不存在新节点中，走删除流程 */
     parentDom.removeChild(prevInstance.dom)
     return null
+
   } else if (prevInstance === undefined) {
+
     /* 新节点不存在老节点中，走新增流程 */
     const nextInstance = instantiate(nextElement)
     parentDom.append(nextInstance.dom)
     return nextInstance
-  } else if (prevInstance.element.type === nextElement.type) {
-    const { props: prevProps } = prevInstance.element
-    const { props: nextProps } = nextElement
+
+  } else if (prevInstance.element.type !== nextElement.type) {
+
+    /* 新老节点类型不同，走替换流程 */
+    const nextInstance = instantiate(nextElement)
+    parentDom.replaceChild(nextInstance.dom, prevInstance.dom)
+    return nextInstance
+
+  } else if (typeof prevInstance.element.type === 'string') {
     /**
-     * 新老节点类型相同，走更新流程
-     * 复用旧dom元素，直接更新都没属性
+     * 新老节点类型相同，且为dom元素类型，走dom元素更新流程
+     * 复用旧dom元素，直接更新dom属性
      * 向下reconcile子元素
      */
+    const { props: prevProps } = prevInstance.element
+    const { props: nextProps } = nextElement
+  
     updateDomProperties(prevInstance.dom, nextProps, prevProps)
 
     /* childInstances需要重新reconcile */
@@ -166,10 +180,31 @@ const reconcile = (parentDom, prevInstance, nextElement) => {
     prevInstance.element = nextElement
     return prevInstance
   } else {
-    /* 新老节点类型不同，走替换流程 */
-    const nextInstance = instantiate(nextElement)
-    parentDom.replace(nextInstance.dom, prevInstance.dom)
-    return nextInstance
+    /**
+     * 新老节点类型相同，且为Component/Function元素类型，走Component/Function元素更新流程
+     * 复用旧instance / componentInstance，但需要更新props
+     * 向下reconcile子元素
+     */
+
+    let childElement = null
+  
+    if (prevInstance.element.type.prototype instanceof Component) {
+      /** 
+       * Component元素类型
+       */
+      prevInstance.componentInstance.props = nextElement.props
+      childElement = prevInstance.componentInstance.render()
+    } else {
+      /** 
+       * Function元素类型
+       */
+      childElement = nextElement.type(nextElement.props)
+    }
+    
+    prevInstance.childInstance = reconcile(parentDom, prevInstance.childInstance, childElement)
+    prevInstance.dom = prevInstance.childInstance.dom
+    prevInstance.element = nextElement
+    return prevInstance
   }
 }
 
@@ -194,5 +229,6 @@ export default render
 
 export {
   preRootInstance,
-  instantiate
+  instantiate,
+  reconcile
 }
