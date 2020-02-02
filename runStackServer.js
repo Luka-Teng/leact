@@ -1,6 +1,6 @@
 import createElement from './createElement'
-import render, { preRootInstance } from './render'
-import Component from './component'
+import render, { preRootInstance } from './stack/render'
+import Component from './stack/component'
 
 class A extends Component {
   render () {
