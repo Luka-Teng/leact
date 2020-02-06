@@ -47,11 +47,16 @@ const workLoop = (callback, breakLoop) => {
  * @param { child } Fiber 第一个子fiber节点
  * @param { sibling } Fiber 下一个兄弟fiber节点
  * @param { dom } Dom 对应的dom节点
- * @param { committedFiber } 对应的同一位置的旧fiber
- * @param { effectTag } 表示这个fiber在commit的时候需要的dom操作
+ * @param { committedFiber } Fiber 对应的同一位置的旧fiber
+ * @param { effectTag } string 表示这个fiber在commit的时候需要的dom操作
  * 1. PLACEMENT: 表示在commit阶段要插入的元素
  * 2. DELETION: 表示在commit阶段要被删除的元素
  * 3. UPDATE: 表示在commit阶段复用dom，只需要做dom属性更新
+ * 
+ * hooks在function component 相当于 state在于class component
+ * @param { hooks } array 每个hook代表一个state和响应变化的action
+ * @param { hook.state } any 一个hook的state值
+ * @param { hook.queue } array 代表每个对state做出改变的action
  * 
  * @param { type } elementType
  * @param { props } elementProps
@@ -99,9 +104,10 @@ const updateDomProperties = (dom, nextProps, prevProps) => {
 
 /** 
  * performWorkUnit的作用是：将element-tree转化为fiber-tree
+ * fiber-tree目前还有dom fiber，function component fiber两种
  * 
  * 对一个fiberUnit进行处理
- * 1. 生成相应的dom，如果fiber本身存在dom则不需要创建（一般是复用的情况）
+ * 1. 处理fiber的更新，新增，删除的等操作
  * 2. 生成子fiber节点，并处理好child，parent，sibling的指向形成fiber-tree（详见reconcileChildren方法）
  * 3. 返回下一个fiberUnit
  * 
@@ -112,12 +118,15 @@ const updateDomProperties = (dom, nextProps, prevProps) => {
  * 4. 如果都不符合，表示fiber-tree遍历完全，work done
  */
 const performWorkUnit = (fiber) => {
-  if (!fiber.dom) {
-    fiber.dom = createDom(fiber)
-  }
+  const isFunctionComponent = fiber.type instanceof Function
 
-  /* 子fiber-tree搭建 */
-  reconcileChildren(fiber)
+  if (isFunctionComponent) {
+    /* function component fiber*/
+    updateFunctionComponent(fiber)
+  } else {
+    /* dom fiber */
+    updateHostComponent(fiber)
+  }
 
   /* 如果存在子fiber，那么子fiber是下一个任务 */
   if (fiber.child) {
@@ -135,16 +144,112 @@ const performWorkUnit = (fiber) => {
 }
 
 /**
+ * function component的hooks是根据调用位置去做定位的
+ * 所以需要提供一个全局的hookIndex 
+ */
+let hookIndex = 0
+
+/* 更新function component类型的fiber */
+function updateFunctionComponent(fiber) {
+  /* 每次处理function component，hookIndex和hooks都需要初始化 */
+  hookIndex = 0
+  fiber.hooks = []
+
+  /* function component的子元素是方法的返回结果 */
+  const children = [fiber.type(fiber.props)]
+  reconcileChildren(fiber, children)
+}
+
+/**
+ * useState
+ * 1. 在对应的fiber上添加了响应的hook（包含state，queue，以调用位置区分）
+ * 2. 返回最新的state，并提供更新state的方法，该方法会重新开始render一轮fiber-tree
+ */
+const useState = (initialState) => {
+  /**
+   * useState的运行肯定发生在updateFunctionComponent调用栈中
+   * 因此使用该方法的fiber肯定是正在performance的nextFiber 
+   */
+  const currentFiber = nextFiber
+
+  /* 对于UPDATE状态的fiber，需要承接state状态 */
+  const oldHook =
+    currentFiber.committedFiber &&
+    currentFiber.committedFiber.hooks &&
+    currentFiber.committedFiber.hooks[hookIndex]
+
+  let hook = null
+
+  if (oldHook) {
+    /**
+     * 如果对应位置存在hook则继承其状态
+     * 并运行queue中的actions，进行状态的改变 
+     */
+    hook = {
+      state: oldHook.state,
+      queue: []
+    }
+    oldHook.queue.forEach(action => {
+      /* 更新state */
+      action(hook)
+    })
+  } else {
+    /**
+     * 如果对应位置不存在hook，表示这是第一次调用，初始化
+     */
+    hook = {
+      state: initialState,
+      queue: []
+    }
+  }
+
+  const setState = state => {
+    /**
+     * 这边选择将state的更新放在下一轮的fiber更新中
+     * 感觉是为了方便将fiber hooks的state的改变进行统一的管理
+     * 例如，useEffect估计也会被推入queue中，这样整个fiber的信息会更加全面些
+     */
+    hook.queue.push((hook) => hook.state = state)
+
+    /**
+     * 每次运行setState都会从根fiber进行渲染
+     * TODO：从运行的节点开始渲染
+     */
+    rootFiber = {
+      dom: rootCommittedFiber.dom,
+      props: rootCommittedFiber.props,
+      committedFiber: rootCommittedFiber,
+    }
+    deletions = []
+    nextFiber = rootFiber
+  }
+
+  /* 将最新的hooks推入fiber.hooks进行状态保存 */
+  currentFiber.hooks.push(hook)
+
+  hookIndex++
+  return [hook.state, setState]
+}
+
+/* 更新dom类型的fiber */
+function updateHostComponent(fiber) {
+  /* 对新增的dom fiber进行dom添加 */
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber)
+  }
+
+  /* dom fiber的子元素就是其实children */
+  reconcileChildren(fiber, fiber.props.children)
+}
+
+/**
  * fiber-tree的搭建（子fiber的搭建）
  * 与stack reconcile分为update，placement(new, replacing)，deletion(removed, replaced)三种情况
  * 其中placement表示增加的元素，其来自新增的元素和要替换的元素
  * deletion表示要删除的元素，其来自被删除和被替换的元素
  * 其中update这种情况需要保存committedFiber，用于做新旧fiber的children的reconcile
  */
-const reconcileChildren = (fiber) => {
-  /* 新的子元素 */
-  const children = fiber.props.children
-
+const reconcileChildren = (fiber, children) => {
   /* 对应位置的旧的child（第一个开始） */
   let oldChild = fiber.committedFiber && fiber.committedFiber.child
 
@@ -216,6 +321,8 @@ const reconcileChildren = (fiber) => {
   }
 }
 
+
+
 /**
  * 根据fiber-tree，对dom进行统一的操作
  * 由于现在的fiber-tree创建阶段是异步的，分散再多个rIC周期中
@@ -227,6 +334,13 @@ const commitRoot = () => {
       return
     }
 
+    /* 寻找最近具有dom的fiber节点 */
+    let domParentFiber = fiber.parent
+    while (!domParentFiber.dom) {
+      domParentFiber = domParentFiber.parent
+    }
+    const domParent = domParentFiber.dom
+
     if (
       fiber.effectTag === "PLACEMENT" &&
       fiber.dom != null
@@ -234,7 +348,7 @@ const commitRoot = () => {
       /**
        * PLACEMENT的情况表示该fiber属于需要被插入的节点
        */
-      fiber.parent.dom.appendChild(fiber.dom)
+      domParent.appendChild(fiber.dom)
     } else if (
       fiber.effectTag === "UPDATE" &&
       fiber.dom != null
@@ -245,14 +359,19 @@ const commitRoot = () => {
        */
       updateDomProperties(
         fiber.dom,
-        fiber.committedFiber.props,
-        fiber.props
+        fiber.props,
+        fiber.committedFiber.props
       )
     } else if (fiber.effectTag === "DELETION") {
       /**
        * DELETION的情况表示该fiber属于需要被删除的节点
+       * 找到其最后渲染出来的dom，并做删除
        */
-      fiber.parent.dom.removeChild(fiber.dom)
+      let domFiber = fiber
+      while (!domFiber.dom) {
+        domFiber = domFiber.child
+      }
+      domParent.removeChild(domFiber.dom)
     }
 
     /* 递归child和sibling */
@@ -261,9 +380,9 @@ const commitRoot = () => {
   }
 
   deletions.forEach(fiber =>commitFiberNode(fiber))
-  commitFiberNode(rootFiber)
+  commitFiberNode(rootFiber.child)
 
-  committedFiber = rootFiber
+  rootCommittedFiber = rootFiber
   rootFiber = null
 }
 
@@ -273,20 +392,20 @@ const commitRoot = () => {
   * 
   * nextFiber: 下一个需要被处理fiber节点
   * rootFiber: 提交前的根fiber
-  * committedFiber: 新fiber如果和同位的旧fiber相同类型，那么具有这个属性，其表示同位的旧fiber，用于同类型fiber的reconcile
+  * rootCommittedFiber: 被提交的根fiber
   * deletions: 表示需要被删除的fiber
   */
  let nextFiber = null
  let rootFiber = null
  let deletions = null
- let committedFiber = null
+ let rootCommittedFiber = null
  const render = (container, element) => {
   rootFiber = nextFiber = {
     dom: container,
     props: {
       children: [element]
     },
-    committedFiber
+    committedFiber: rootCommittedFiber
   }
   deletions = []
 }
@@ -309,5 +428,6 @@ workLoop(() => {
 /* export */
 export default render
 export {
-  rootFiber
+  rootFiber,
+  useState
 }

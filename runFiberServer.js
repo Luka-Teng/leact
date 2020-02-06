@@ -1,5 +1,21 @@
 import createElement from './createElement'
-import render, { rootFiber } from './fiber/render'
+import render, { rootFiber, useState } from './fiber/render'
+
+const A = () => {
+  const [a, setA] = useState(111)
+  return createElement(
+    'h1', 
+    {
+      id: 'first'
+    },
+    a,
+    createElement('button', {
+      onClick: () => {
+        setA(222)
+      }
+    }, 'click')
+  )
+}
 
 render(document.getElementById('root'), createElement('div', {},
   'text1',
@@ -16,14 +32,10 @@ setTimeout(() => {
   render(document.getElementById('root'), createElement('div', {},
     'text1',
     createElement(
-      'h1', 
-      {
-        id: 'first'
-      },
-      'text2'
+      A
     )
   ))
-}, 5000)
+}, 2000)
 
 window.rootFiber = rootFiber
 
