@@ -13,7 +13,7 @@ class Component {
   reconcileChildren () {
     const parentDom = this.__instance.dom.parentNode
     const element = this.render()
-    reconcile(parentDom, this.__instance.childInstance, element)
+    this.__instance.childInstance = reconcile(parentDom, this.__instance.childInstance, element)
   }
 }
 
