@@ -142,6 +142,10 @@ let render = (appDom, element) => {
 const reconcile = (parentDom, prevInstance, nextElement) => {
   window.p = parentDom
   if (nextElement === undefined) {
+    /**
+     * TODO：
+     * 需要实现unmount声生命周期的执行，深度遍历
+     */
 
     /* 老节点不存在新节点中，走删除流程 */
     parentDom.removeChild(prevInstance.dom)

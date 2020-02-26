@@ -12,7 +12,12 @@
  *  type: 'div'
  *  props: {
  *    id: 'app',
- *    children: 'hello'
+ *    children: {
+ *      type: 'TEXT_TYPE',
+ *      props: {
+ *        nodeValue: 'hello'
+ *      }
+ *    }
  *  }
  * }
  */
