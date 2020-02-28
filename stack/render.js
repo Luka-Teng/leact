@@ -140,7 +140,6 @@ let render = (appDom, element) => {
  * 可以简单的理解成将老的instance-tree和新的element-tree进行比较
  */
 const reconcile = (parentDom, prevInstance, nextElement) => {
-  window.p = parentDom
   if (nextElement === undefined) {
     /**
      * TODO：
